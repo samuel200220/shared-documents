@@ -21,7 +21,7 @@ Resources:
     Properties:
       StageName: '$default'
       CorsConfiguration:
-        AllowOrigins: ['http://localhost:5173', 'http://localhost:4173']
+        AllowOrigins: ['http://localhost:5173', 'http://localhost:4173', 'https://dohwo4wdw1.execute-api.eu-north-1.amazonaws.com']
         AllowHeaders: [authorization, content-type, x-request-id]
         AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
         AllowCredentials: false
