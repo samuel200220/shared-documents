@@ -4,9 +4,10 @@ import type { Document, Quota } from '../types';
 
 interface DocumentListProps {
   onSelectDocument: (doc: Document) => void;
+  loadError?: string;
 }
 
-export function DocumentList({ onSelectDocument }: DocumentListProps) {
+export function DocumentList({ onSelectDocument, loadError = '' }: DocumentListProps) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [quota, setQuota] = useState<Quota | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,6 +106,12 @@ export function DocumentList({ onSelectDocument }: DocumentListProps) {
       </nav>
 
       <div className="container" style={{ paddingTop: '2rem' }}>
+        {loadError && (
+          <div className="error" style={{ marginBottom: '1rem' }}>
+            {loadError}
+          </div>
+        )}
+
         {error && (
           <div className="error" style={{ marginBottom: '1rem' }}>
             {error}

@@ -12,3 +12,4 @@ frontend/.vite/
 *.log
 *.md
 !README.md
+!Conception.pdf
