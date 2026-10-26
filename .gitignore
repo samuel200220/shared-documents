@@ -11,3 +11,4 @@ frontend/.vite/
 .vscode/
 *.log
 *.md
+!README.md
