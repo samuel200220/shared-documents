@@ -1,0 +1,270 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Shared Docs Editor - development foundation (eu-north-1)
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 512
+    Timeout: 15
+    Tracing: Active
+    Environment:
+      Variables:
+        APP_TABLE: !Ref AppTable
+        DOCUMENTS_BUCKET: !Ref DocumentsBucket
+        ADMIN_SECRET: changeme  # À changer en production via paramètre ou Secrets Manager
+
+Resources:
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: '$default'
+      CorsConfiguration:
+        AllowOrigins: ['http://localhost:5173', 'http://localhost:4173']
+        AllowHeaders: [authorization, content-type, x-request-id]
+        AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+        AllowCredentials: false
+        MaxAge: 300
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [handler.ts]
+        External: ['@aws-sdk/*']
+        Target: es2022
+        Format: esm
+        Sourcemap: true
+        OutExtension:
+          - .js=.mjs
+    Properties:
+      CodeUri: ../backend/
+      Handler: handler.handler
+      Environment:
+        Variables:
+          WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${WebSocketStage}'
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:TransactWriteItems
+                - dynamodb:Query
+                - dynamodb:BatchGetItem
+                - dynamodb:Scan
+              Resource: !GetAtt AppTable.Arn
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: '*'
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub '${DocumentsBucket.Arn}/downloads/*'
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+              Resource:
+                - !Sub '${DocumentsBucket.Arn}/versions/*'
+                - !Sub '${DocumentsBucket.Arn}/crdt/*'
+            - Effect: Allow
+              Action: execute-api:ManageConnections
+              Resource: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${WebSocketStage}/POST/@connections/*'
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: shared-docs-collaboration
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+
+  WebSocketFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints: [websocket.ts]
+        External: ['@aws-sdk/*']
+        Target: es2022
+        Format: esm
+        Sourcemap: true
+        OutExtension:
+          - .js=.mjs
+    Properties:
+      CodeUri: ../backend/
+      Handler: websocket.handler
+      Timeout: 29
+      Environment:
+        Variables:
+          WEBSOCKET_ENDPOINT: !Sub 'https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${WebSocketStage}'
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:TransactWriteItems
+                - dynamodb:Query
+              Resource: !GetAtt AppTable.Arn
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub '${DocumentsBucket.Arn}/crdt/*'
+            - Effect: Allow
+              Action: s3:DeleteObject
+              Resource: !Sub '${DocumentsBucket.Arn}/crdt/*'
+            - Effect: Allow
+              Action: execute-api:ManageConnections
+              Resource: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/${WebSocketStage}/POST/@connections/*'
+
+  WebSocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationMethod: POST
+      IntegrationUri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketFunction.Arn}/invocations'
+      PayloadFormatVersion: '1.0'
+
+  WebSocketConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: '$connect'
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  WebSocketDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: '$disconnect'
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  WebSocketDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: '$default'
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  WebSocketSyncRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: sync
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  WebSocketUpdateRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: update
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  WebSocketPingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: ping
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  WebSocketCursorRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: cursor
+      AuthorizationType: NONE
+      Target: !Sub 'integrations/${WebSocketIntegration}'
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: dev
+      AutoDeploy: true
+
+  WebSocketInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebSocketFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*'
+
+  AppTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireRenderedDownloads
+            Status: Enabled
+            Prefix: downloads/
+            ExpirationInDays: 30
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+Outputs:
+  ApiUrl:
+    Description: HTTP API base URL
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+  AppTableName:
+    Value: !Ref AppTable
+  DocumentsBucketName:
+    Value: !Ref DocumentsBucket
+  WebSocketUrl:
+    Description: Collaboration WebSocket URL
+    Value: !Sub 'wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${WebSocketStage}'

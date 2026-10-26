@@ -1,0 +1,13 @@
+node_modules/
+**/node_modules/
+**/dist/
+frontend/.vite/
+**/.aws-sam/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+*.pdf
+.vscode/
+*.log
+*.md

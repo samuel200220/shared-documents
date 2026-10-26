@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "types": ["node", "aws-lambda"],
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["handler.ts", "src/**/*.ts", "tests/**/*.ts"]
+}

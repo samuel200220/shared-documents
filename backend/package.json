@@ -1,0 +1,35 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "handler.ts",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "sam build --template-file ../infrastructure/template.yaml",
+    "build:ts": "esbuild handler.ts --bundle --platform=node --target=node22 --format=esm --external:@aws-sdk/* --outfile=dist/handler.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.164",
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.1156.0",
+    "@aws-sdk/client-dynamodb": "^3.1156.0",
+    "@aws-sdk/client-s3": "^3.1156.0",
+    "@aws-sdk/client-ses": "^3.1156.0",
+    "@aws-sdk/lib-dynamodb": "^3.1156.0",
+    "pdf-lib": "^1.17.1",
+    "yjs": "^13.6.33"
+  }
+}
